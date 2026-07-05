@@ -13,11 +13,16 @@ dist/
 *.egg
 *.whl
 
+# Native compiler build outputs
+bin/init-app-compiler
+bin/init-app-compiler.exe
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
 
 # Virtual environments
+.venv/
 venv/
 .env/
 .env.local

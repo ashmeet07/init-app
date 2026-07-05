@@ -10,6 +10,7 @@ from create_app.engine.ui.user_interface import InitUI
 from create_app.engine.prompts import BuildPrompts
 import create_app.constants as const
 from create_app.initializer.controller import Controller 
+from create_app.path_config import PathConfig
 
 class AppEngine(InitUI):
     def __init__(self):
@@ -32,6 +33,13 @@ class AppEngine(InitUI):
         # Identity & Version
         parser.add_argument("name", nargs="?", help="Project name")
         parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {const.__version__}")
+        parser.add_argument("--output-dir", help="Directory where the project folder is created. Defaults to ~/Documents.")
+        parser.add_argument("--here", action="store_true", help="Create the project in the current working directory.")
+        parser.add_argument("--path-behavior", choices=["documents", "current", "custom"], help="One-off path behavior for this project.")
+        parser.add_argument("--set-default-path-behavior", choices=["documents", "current", "custom"], help="Persist the default project path behavior.")
+        parser.add_argument("--set-default-output-dir", help="Persist a custom default output directory.")
+        parser.add_argument("--show-path-config", action="store_true", help="Show saved path defaults and exit.")
+        parser.add_argument("--reset-path-config", action="store_true", help="Reset saved path defaults and exit.")
         
         # Core Configuration
         parser.add_argument("-f", "--framework", choices=["fastapi", "flask", "django", "others"], help="Target framework")
@@ -52,6 +60,8 @@ class AppEngine(InitUI):
         parser.add_argument("--github", nargs="+", help="Select GitHub actions")
         parser.add_argument("--k8s", nargs="+", help="Select Kubernetes manifests")
         parser.add_argument("--jenkins", nargs="+", help="Select Jenkins pipeline files")
+        parser.add_argument("--community", nargs="+", help="Select community files")
+        parser.add_argument("--package-files", nargs="+", help="Select package metadata files")
         
         return parser
 
@@ -59,10 +69,41 @@ class AppEngine(InitUI):
         parser = self._setup_parser()
         args = parser.parse_args()
 
+        self._handle_path_config_flags(args)
+
         if args.name and args.framework:
             self._handle_cli_mode(args)
         else:
             self._handle_interactive_mode()
+
+    def _handle_path_config_flags(self, args):
+        """Handle persistent default path behavior flags before project creation."""
+        if args.reset_path_config:
+            path = PathConfig.reset()
+            print(f"Reset path config: {path}")
+            sys.exit(0)
+
+        if args.show_path_config:
+            print(PathConfig.describe())
+            sys.exit(0)
+
+        if args.set_default_path_behavior or args.set_default_output_dir:
+            config = PathConfig.load()
+
+            if args.set_default_path_behavior:
+                config["path_behavior"] = args.set_default_path_behavior
+
+            if args.set_default_output_dir:
+                config["output_dir"] = str(Path(args.set_default_output_dir).expanduser().resolve())
+                if not args.set_default_path_behavior:
+                    config["path_behavior"] = "custom"
+
+            path = PathConfig.save(config)
+            print(f"Saved path config: {path}")
+            print(PathConfig.describe())
+
+            if not args.name:
+                sys.exit(0)
 
     def _handle_cli_mode(self, args):
         """Processes logic based on CLI flags with full Django-aware support."""
@@ -71,7 +112,14 @@ class AppEngine(InitUI):
         p_name = args.name
         
         # Resolve Infrastructure
-        infra_map = {"docker": args.docker, "github": args.github, "kubernetes": args.k8s, "jenkins": args.jenkins}
+        infra_map = {
+            "docker": args.docker,
+            "github": args.github,
+            "kubernetes": args.k8s,
+            "jenkins": args.jenkins,
+            "community": args.community,
+            "pkg": args.package_files,
+        }
         for key, files in infra_map.items():
             if files:
                 self.manifest["infra_suites"].append(key)
@@ -99,7 +147,10 @@ class AppEngine(InitUI):
             "apps": "none", 
             "database": args.db or "sqlite",
             "venv_enabled": args.venv == "y",
-            "init_strategy": init_map
+            "init_strategy": init_map,
+            "output_dir": args.output_dir,
+            "create_in_current_dir": args.here,
+            "path_behavior": args.path_behavior,
         })
         
         mission = Controller(self.manifest, list(selected_folders))
@@ -168,7 +219,11 @@ class AppEngine(InitUI):
 
         infra_options = [("docker", const.DOCKER_SUITE), ("jenkins", const.JENKINS_SUITE), ("github", const.GITHUB_SUITE)]
         if mode in ["production", "custom"]:
-            infra_options.extend([("community", const.COMMUNITY_CORE), ("kubernetes", const.K8S_FILES)])
+            infra_options.extend([
+                ("community", const.COMMUNITY_CORE),
+                ("pkg", const.PACKAGE_FILES),
+                ("kubernetes", const.K8S_FILES),
+            ])
 
         for key, suite in infra_options:
             res = self.checklist("infra forge", key, suite, flow=f_list)

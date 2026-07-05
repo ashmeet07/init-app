@@ -42,7 +42,7 @@ class Bundler:
         """Comprehensive Dependency Resolver - Injects Rich Professional Libraries."""
         logger.debug(f"🔍 Deep Scanning dependencies for {self.fw_name}...")
         
-        # 1. Global Core Requirements (Essential for modern Python development)
+        # 1. Global Core Requirements: pure-Python/portable by default for CI and dev containers.
         deps = [
             "python-dotenv", 
             "jinja2", 
@@ -50,7 +50,6 @@ class Bundler:
             "loguru", 
             "alembic",     
             "sqlalchemy",  
-            "psycopg2-binary",
             "cryptography",
             "pydantic"      # Added as global for Mappers/Schemas across all frameworks
         ]
@@ -102,7 +101,9 @@ class Bundler:
 
         # 3. Database Adapters (Extra resolution)
         if "mysql" in self.db_engine:
-            deps += ["mysqlclient"]
+            deps += ["PyMySQL"]
+        elif "postgres" in self.db_engine:
+            deps += ["psycopg[binary]"]
         elif "mongodb" in self.db_engine:
             deps += ["pymongo", "motor", "beanie" if self.fw_name == "fastapi" else "mongoengine"]
 
@@ -130,6 +131,7 @@ class Bundler:
             "host": self.ctx.get("host", "0.0.0.0"),
             "debug": "True" if self.strategy == "standard" else "False",
             "server_type": self.ctx.get("server_type", default_server),
+            "server": self.ctx.get("server", self.ctx.get("server_type", default_server)),
             "fw_name": self.fw_name
         })
 
@@ -182,7 +184,7 @@ class Bundler:
             ui_rules = [
                 {"source": "common/template/index.html.tpl", "target": f"{ui_folder}/index.html"},
                 {"source": "common/static/css/style.css.tpl", "target": f"{ui_folder}/static/css/style.css"},
-                {"source": "common/static/scripts/script.js.tpl", "target": f"{ui_folder}/static/js/main.js"}
+                {"source": "common/static/scripts/script.js.tpl", "target": f"{ui_folder}/static/js/script.js"}
             ]
             existing = [r["target"] for r in manifest]
             for rule in ui_rules:

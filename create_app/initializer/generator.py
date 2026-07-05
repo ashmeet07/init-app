@@ -1,7 +1,7 @@
 import os
 import shutil
 from pathlib import Path
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 from create_app.logger import logger
 
 class Generator:
@@ -57,12 +57,264 @@ class Generator:
 
             target_path.write_text(rendered_content, encoding="utf-8")
             logger.debug(f"📝 Rendered: {output_rel_path}")
-            
+
+        except TemplateNotFound:
+            fallback = self._fallback_content(output_rel_path)
+            target_path.write_text(fallback, encoding="utf-8")
+            logger.debug(f"📝 Generated fallback: {output_rel_path}")
         except Exception as e:
             logger.error(f"❌ Template Error [{tpl_path}]: {str(e)}")
-            if not target_path.exists(): 
-                target_path.touch()
-                logger.warning(f"⚠️ Created empty fallback file: {output_rel_path}")
+            if not target_path.exists():
+                fallback = self._fallback_content(output_rel_path)
+                target_path.write_text(fallback, encoding="utf-8")
+                logger.warning(f"⚠️ Created fallback file: {output_rel_path}")
+
+    def _fallback_content(self, output_rel_path: str) -> str:
+        """Create useful starter content for supported files that lack templates."""
+        path = output_rel_path.replace("\\", "/")
+        name = Path(path).name
+        suffix = Path(path).suffix.lower()
+        project = self.ctx.get("project_name", "app")
+        framework = self.ctx.get("fw_name", self.fw)
+        dependencies = self.ctx.get("dependencies", "")
+
+        if name == "Dockerfile":
+            return (
+                "FROM python:3.11-slim\n\n"
+                "ENV PYTHONDONTWRITEBYTECODE=1\n"
+                "ENV PYTHONUNBUFFERED=1\n\n"
+                "WORKDIR /app\n"
+                "COPY requirements.txt .\n"
+                "RUN python -m pip install --upgrade pip setuptools wheel\n"
+                "RUN pip install --no-cache-dir -r requirements.txt\n"
+                "COPY . .\n"
+                "CMD [\"python\", \"app.py\"]\n"
+            )
+
+        if name in {"docker-compose.yml", "docker-compose.prod.yml"}:
+            return (
+                "services:\n"
+                "  app:\n"
+                "    build: ..\n"
+                "    ports:\n"
+                "      - \"8000:8000\"\n"
+                "    env_file:\n"
+                "      - ../.env\n"
+            )
+
+        if name == ".dockerignore":
+            return ".git\n.venv\nvenv\n__pycache__\n*.pyc\n.env\nbuild\ndist\n"
+
+        if path.startswith(".github/workflows/") and suffix in {".yml", ".yaml"}:
+            return (
+                "name: CI\n\n"
+                "on:\n"
+                "  push:\n"
+                "  pull_request:\n\n"
+                "jobs:\n"
+                "  test:\n"
+                "    runs-on: ubuntu-latest\n"
+                "    steps:\n"
+                "      - uses: actions/checkout@v4\n"
+                "      - uses: actions/setup-python@v5\n"
+                "        with:\n"
+                "          python-version: '3.11'\n"
+                "      - run: python -m pip install --upgrade pip\n"
+                "      - run: python -m pip install --upgrade setuptools wheel\n"
+                "      - run: python -m pip install -r requirements.txt\n"
+                "      - run: python -m compileall .\n"
+            )
+
+        if path.startswith(".github/ISSUE_TEMPLATE/") and suffix == ".md":
+            title = name.replace("_", " ").replace(".md", "").title()
+            return f"# {title}\n\n## Summary\n\n## Steps to Reproduce\n\n## Expected Behavior\n\n"
+
+        if name == "PULL_REQUEST_TEMPLATE.md":
+            return "## Summary\n\n## Checklist\n\n- [ ] Tests or validation completed\n"
+
+        if name == "Jenkinsfile":
+            return (
+                "pipeline {\n"
+                "  agent any\n"
+                "  stages {\n"
+                "    stage('Test') {\n"
+                "      steps { sh 'python -m compileall .' }\n"
+                "    }\n"
+                "  }\n"
+                "}\n"
+            )
+
+        if suffix == ".groovy":
+            return "def call() {\n  echo 'Pipeline step placeholder'\n}\n"
+
+        if suffix == ".sh":
+            return "#!/usr/bin/env sh\nset -eu\n\necho \"Running project script\"\n"
+
+        if path.startswith("k8s/") and suffix in {".yml", ".yaml"}:
+            if name == "deployment.yml":
+                return (
+                    "apiVersion: apps/v1\n"
+                    "kind: Deployment\n"
+                    "metadata:\n"
+                    f"  name: {project}\n"
+                    "spec:\n"
+                    "  replicas: 1\n"
+                    "  selector:\n"
+                    "    matchLabels:\n"
+                    f"      app: {project}\n"
+                    "  template:\n"
+                    "    metadata:\n"
+                    "      labels:\n"
+                    f"        app: {project}\n"
+                    "    spec:\n"
+                    "      containers:\n"
+                    f"        - name: {project}\n"
+                    f"          image: {project}:latest\n"
+                    "          ports:\n"
+                    "            - containerPort: 8000\n"
+                )
+            if name == "service.yml":
+                return (
+                    "apiVersion: v1\n"
+                    "kind: Service\n"
+                    "metadata:\n"
+                    f"  name: {project}\n"
+                    "spec:\n"
+                    "  selector:\n"
+                    f"    app: {project}\n"
+                    "  ports:\n"
+                    "    - port: 80\n"
+                    "      targetPort: 8000\n"
+                )
+            if name == "ingress.yml":
+                return (
+                    "apiVersion: networking.k8s.io/v1\n"
+                    "kind: Ingress\n"
+                    "metadata:\n"
+                    f"  name: {project}\n"
+                    "spec:\n"
+                    "  rules:\n"
+                    "    - http:\n"
+                    "        paths:\n"
+                    "          - path: /\n"
+                    "            pathType: Prefix\n"
+                    "            backend:\n"
+                    "              service:\n"
+                    f"                name: {project}\n"
+                    "                port:\n"
+                    "                  number: 80\n"
+                )
+            if name == "hpa.yml":
+                return (
+                    "apiVersion: autoscaling/v2\n"
+                    "kind: HorizontalPodAutoscaler\n"
+                    "metadata:\n"
+                    f"  name: {project}\n"
+                    "spec:\n"
+                    "  minReplicas: 1\n"
+                    "  maxReplicas: 3\n"
+                    "  scaleTargetRef:\n"
+                    "    apiVersion: apps/v1\n"
+                    "    kind: Deployment\n"
+                    f"    name: {project}\n"
+                )
+            if name == "pvc.yml":
+                return (
+                    "apiVersion: v1\n"
+                    "kind: PersistentVolumeClaim\n"
+                    "metadata:\n"
+                    f"  name: {project}\n"
+                    "spec:\n"
+                    "  accessModes:\n"
+                    "    - ReadWriteOnce\n"
+                    "  resources:\n"
+                    "    requests:\n"
+                    "      storage: 1Gi\n"
+                )
+            if name == "secret.yml":
+                return (
+                    "apiVersion: v1\n"
+                    "kind: Secret\n"
+                    "metadata:\n"
+                    f"  name: {project}\n"
+                    "type: Opaque\n"
+                    "stringData:\n"
+                    "  APP_ENV: production\n"
+                )
+            return (
+                "apiVersion: v1\n"
+                "kind: ConfigMap\n"
+                "metadata:\n"
+                f"  name: {project}\n"
+                "data:\n"
+                f"  FRAMEWORK: {framework}\n"
+            )
+
+        if name == "pyproject.toml":
+            package_name = str(project).replace("_", "-")
+            return (
+                "[build-system]\n"
+                "requires = [\"setuptools>=61\", \"wheel\"]\n"
+                "build-backend = \"setuptools.build_meta\"\n\n"
+                "[project]\n"
+                f"name = \"{package_name}\"\n"
+                "version = \"0.1.0\"\n"
+                "requires-python = \">=3.9\"\n"
+            )
+
+        if name == "setup.cfg":
+            package_name = str(project).replace("_", "-")
+            return (
+                "[metadata]\n"
+                f"name = {package_name}\n"
+                "version = 0.1.0\n"
+                "description = Generated Python application\n\n"
+                "[options]\n"
+                "packages = find:\n"
+                "python_requires = >=3.9\n"
+                "install_requires =\n"
+                f"{self._indent_requirements(dependencies)}"
+            )
+
+        if name == "setup.py":
+            return "from setuptools import setup\n\nsetup()\n"
+
+        if name == "MANIFEST.in":
+            return "include README.md\nrecursive-include . *.py *.md *.txt *.yml *.yaml\n"
+
+        if name == "package.json":
+            return f'{{\n  "name": "{project}",\n  "version": "0.1.0",\n  "private": true\n}}\n'
+
+        if name == "requirements.txt":
+            return f"{dependencies}\n" if dependencies else "\n"
+
+        if name == ".editorconfig":
+            return "root = true\n\n[*]\ncharset = utf-8\nindent_style = space\nindent_size = 4\n"
+
+        if name == "alembic.ini":
+            return "[alembic]\nscript_location = db/migrations\nsqlalchemy.url = sqlite:///app.db\n"
+
+        if suffix == ".md":
+            title = name.replace("_", " ").replace(".md", "").title()
+            return f"# {title}\n\nGenerated for {project} ({framework}).\n"
+
+        if suffix in {".yml", ".yaml"}:
+            return f"name: {project}\n"
+
+        if suffix == ".json":
+            return "{}\n"
+
+        if suffix == ".ini":
+            return f"[{project}]\nframework = {framework}\n"
+
+        return f"# {name}\n\nGenerated for {project}.\n"
+
+    @staticmethod
+    def _indent_requirements(dependencies: str) -> str:
+        lines = [line.strip() for line in str(dependencies).splitlines() if line.strip()]
+        if not lines:
+            return ""
+        return "".join(f"    {line}\n" for line in lines)
 
     def run(self, blueprint: dict, manifest_rules: list):
         """Executes the physical build sequence."""

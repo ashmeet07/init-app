@@ -2,20 +2,19 @@
 include LICENSE
 include README.md
 include setup.py
-include pyproject.toml
+include setup.cfg
 
-# Include ALL files inside these directories (Templates & Static)
-recursive-include create_app/templates *
-recursive-include create_app/static *
-
-# Specifically ensure common templates and assets are grabbed
-recursive-include create_app/templates/common *
-recursive-include create_app/templates/common/static *
-recursive-include create_app/templates/common/template *
+# Include templates, static templates, and native compiler sources.
+recursive-include create_app/common *
+recursive-include compiler *.c *.h
+recursive-include scripts *.py *.sh
 
 # Exclude all Python cache and compiled files
 global-exclude __pycache__
 global-exclude *.py[cod]
 global-exclude *.so
+global-exclude *.dll
+global-exclude *.dylib
+global-exclude *.exe
 global-exclude .DS_Store
 global-exclude .env

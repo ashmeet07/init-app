@@ -37,6 +37,13 @@ Use these flags to bypass menus and automate your workflow.
 * `-f, --framework`: `fastapi`, `flask`, `django`, `others`.
 * `-s, --server`: Specify the runner (e.g., `uvicorn`, `gunicorn`, `hypercorn`).
 * `-t, --type`: The build strategy (`auto_config`, `standard`, `production`, `custom`).
+* `--output-dir`: Directory where the project folder is created. Defaults to `~/Documents`.
+* `--here`: Create the project in the current working directory.
+* `--path-behavior`: One-off path behavior for this project: `documents`, `current`, or `custom`.
+* `--set-default-path-behavior`: Save the default path behavior for future runs.
+* `--set-default-output-dir`: Save a custom default output directory for future runs.
+* `--show-path-config`: Show saved path behavior.
+* `--reset-path-config`: Reset saved path behavior.
 
 ### Architecture & Packages (Custom Mode)
 
@@ -64,7 +71,7 @@ Use these flags to bypass menus and automate your workflow.
 Builds a FastAPI project with SQLite and a VENV instantly.
 
 ```bash
-python app.py quick_api -f fastapi -t auto_config --venv y
+init-app quick_api -f fastapi -t auto_config --venv y
 
 ```
 
@@ -73,7 +80,7 @@ python app.py quick_api -f fastapi -t auto_config --venv y
 Builds a Django + Postgres app with Docker and GitHub Actions.
 
 ```bash
-python app.py pro_backend -f django -t production --db postgres --docker dockerfile docker-compose --github main.yml
+init-app pro_backend -f django -t production --db postgres --docker dockerfile docker-compose --github main.yml
 
 ```
 
@@ -82,7 +89,7 @@ python app.py pro_backend -f django -t production --db postgres --docker dockerf
 The most powerful command. Manually define folders and only make `src` and `app` Python packages.
 
 ```bash
-python app.py bespoke_engine -f fastapi -t custom \
+init-app bespoke_engine -f fastapi -t custom \
   --folders src app docs tests logs \
   --packages src app \
   --db mongodb --venv y

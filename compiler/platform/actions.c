@@ -27,16 +27,17 @@ int generate_file(const char *filename, const char *content) {
 }
 
 int check_python() {
-    // Checks if python is available in the system path
     const char* cmd = 
 #ifdef _WIN32
-        "python --version >nul 2>&1";
+        "python --version >nul 2>&1 || py --version >nul 2>&1";
 #else
-        "python3 --version >/dev/null 2>&1";
+        "python3 --version >/dev/null 2>&1 || python --version >/dev/null 2>&1";
 #endif
     return (system(cmd) == 0) ? SUCCESS : ERROR;
 }
 
 void get_curr_dir(char *buf, int size) {
-    GETCWD(buf, size);
+    if (buf && size > 0) {
+        GETCWD(buf, size);
+    }
 }

@@ -1,9 +1,11 @@
 import os
 import sys
+import json
 import subprocess
 import shutil
 import re
 from pathlib import Path
+from typing import Optional
 import jinja2
 
 # --- AGGRESSIVE PATH RESOLUTION ---
@@ -14,6 +16,7 @@ if ROOT_DIR not in sys.path:
 from create_app.framework.bundler import Bundler
 from create_app.engine.ui.ui_config import UIConfig 
 from create_app.initializer.generator import Generator
+from create_app.path_config import PathConfig
 import create_app.constants as const 
 from create_app.engine.ui.spinner import Spinner 
 from docs.prerequisite import Prerequisite
@@ -48,11 +51,14 @@ class Controller:
             }
             self.manifest["init_strategy"] = {f: True for f in folders}
 
-        self.root = Path.cwd().resolve() / self.p_name
+        self.invocation_dir = Path.cwd().resolve()
+        self.output_base = self._resolve_output_base(manifest)
+        self.root = self.output_base / self.p_name
         self.colors = UIConfig.C
         
         # DNA of the build
         self.ctx = {
+            **self.manifest,
             "project_name": self.p_name,
             "app_name": manifest.get("app_name", "core_app"),
             "framework": self.fw,
@@ -60,7 +66,9 @@ class Controller:
             "is_drf": self.is_drf,
             "custom_folders": folders,
             "init_strategy": self.manifest.get("init_strategy", {}),
-            **self.manifest 
+            "invocation_dir": str(self.invocation_dir),
+            "output_dir": str(self.output_base),
+            "project_path": str(self.root),
         }
 
         logger.info(f"🚀 Controller linked for mission: {self.p_name}")
@@ -70,6 +78,78 @@ class Controller:
         # ⚡ Template Engine for Terminal Output
         self.tpl_path = Path(ROOT_DIR) / "create_app" / "common"
         self.jinja_env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(self.tpl_path)))
+
+    @staticmethod
+    def _default_output_base() -> Path:
+        """Default generated apps to the user's Documents folder."""
+        return (Path.home() / "Documents").resolve()
+
+    @classmethod
+    def _resolve_output_base(cls, manifest: dict) -> Path:
+        raw_output = manifest.get("output_dir") or manifest.get("output path")
+        if raw_output:
+            return Path(str(raw_output)).expanduser().resolve()
+
+        if manifest.get("create_in_current_dir"):
+            return Path.cwd().resolve()
+
+        config = PathConfig.load()
+        behavior = manifest.get("path_behavior") or config.get("path_behavior", "documents")
+
+        if behavior == "current":
+            return Path.cwd().resolve()
+
+        if behavior == "custom":
+            configured_output = config.get("output_dir")
+            if configured_output:
+                return Path(str(configured_output)).expanduser().resolve()
+
+        return cls._default_output_base()
+
+    def _sync_project_paths(self):
+        """Keep path context and worker roots aligned if tests override self.root."""
+        self.root = Path(self.root).expanduser().resolve()
+        self.output_base = self.root.parent
+        self.ctx.update({
+            "invocation_dir": str(self.invocation_dir),
+            "output_dir": str(self.output_base),
+            "project_path": str(self.root),
+        })
+        self.executor.root = self.root
+        self.executor.ctx.update(self.ctx)
+        self.worker.root = self.root
+        self.worker.ctx.update(self.executor.ctx)
+
+    @staticmethod
+    def _normalize_generated_path(path: str, suite: Optional[str] = None) -> str:
+        """Return the final project path for a requested support file."""
+        normalized = str(path).replace("\\", "/").strip()
+        if normalized.endswith(".tpl"):
+            normalized = normalized[:-4]
+
+        suite_aliases = {"github": ".github", "kubernetes": "k8s", "pkg": ""}
+        suite_root = suite_aliases.get(str(suite or "").lower(), str(suite or "").lower())
+
+        if suite_root and suite_root != "community":
+            if normalized == suite_root or normalized.startswith(f"{suite_root}/"):
+                return normalized
+            if suite_root == ".github":
+                return f".github/workflows/{normalized}"
+            return f"{suite_root}/{normalized}"
+
+        return normalized
+
+    def _source_for_target(self, target: str) -> str:
+        """Prefer a real template when one exists; otherwise let Generator synthesize."""
+        candidates = [
+            self.tpl_path / f"{target}.tpl",
+            self.tpl_path / target,
+            self.tpl_path / "template" / f"{os.path.basename(target)}.tpl",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return f"common/{candidate.relative_to(self.tpl_path)}".replace("\\", "/")
+        return f"generated/{target}.tpl"
 
     def _run_prerequisites(self):
         """Validates system tools before starting the build."""
@@ -153,6 +233,51 @@ class Controller:
                 settings_path.write_text(content, encoding="utf-8")
                 logger.info(f"✅ Django settings.py patched. Mode: {'DRF' if self.is_drf else 'Standard'}")
 
+            views_path = self.root / app_name / "views.py"
+            views_path.write_text(
+                f'''from django.http import JsonResponse
+from django.shortcuts import render
+
+
+def home(request):
+    return render(request, "index.html")
+
+
+def health(request):
+    return JsonResponse({{"status": "online", "framework": "django"}})
+
+
+def about(request):
+    return JsonResponse({{
+        "name": "{self.p_name}",
+        "framework": "django",
+        "strategy": "{self.strategy}",
+        "status": "online",
+        "generated_by": "init-app",
+    }})
+''',
+                encoding="utf-8",
+            )
+
+            urls_path = self.root / self.p_name / "urls.py"
+            if urls_path.exists():
+                urls_path.write_text(
+                    f'''from django.contrib import admin
+from django.urls import path
+
+from {app_name} import views
+
+
+urlpatterns = [
+    path("", views.home, name="home"),
+    path("health", views.health, name="health"),
+    path("api/about", views.about, name="about"),
+    path("admin/", admin.site.urls),
+]
+''',
+                    encoding="utf-8",
+                )
+
     def _display_tpl(self, tpl_name: str):
         """Renders a specific template directly to terminal output."""
         try:
@@ -169,9 +294,26 @@ class Controller:
         self._display_tpl("work.txt.tpl")
         print("—"*50 + "\n")
 
+    def _write_project_metadata(self):
+        metadata = {
+            "project_name": self.p_name,
+            "framework": self.fw,
+            "build_strategy": self.strategy,
+            "project_path": str(self.root),
+            "output_dir": str(self.output_base),
+            "invocation_dir": str(self.invocation_dir),
+            "generated_by": const.APP_NAME,
+            "generator_version": const.__version__,
+        }
+        (self.root / ".init-app.json").write_text(
+            json.dumps(metadata, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
     def run_mission(self):
         """Master Build Sequence Orchestrator."""
         try:
+            self._sync_project_paths()
             self._run_prerequisites()
             self.root.mkdir(parents=True, exist_ok=True)
             
@@ -201,11 +343,11 @@ class Controller:
                 for suite, files in infra_map.items():
                     if not files: continue
                     for filename in files:
-                        base_file = os.path.basename(filename)
-                        raw_name = base_file.replace('.tpl', '')
-                        src_path = f"common/template/{base_file}" if raw_name == "index.html" else f"common/{base_file}"
-                        target = f".github/workflows/{raw_name}" if suite == "github" else f"{suite}/{raw_name}"
-                        final_manifest.append({"source": src_path, "target": target})
+                        target = self._normalize_generated_path(filename, suite)
+                        final_manifest.append({
+                            "source": self._source_for_target(target),
+                            "target": target,
+                        })
                 
                 self.worker.run(blueprint=build_data.get('blueprint'), manifest_rules=final_manifest)
             
@@ -216,6 +358,8 @@ class Controller:
                 ui_dir = self.root / "ui"
                 if ui_dir.exists(): 
                     shutil.rmtree(ui_dir)
+
+            self._write_project_metadata()
             
             # ⚡ 6. FINAL TERMINAL OUTPUT
             self._render_instructions()

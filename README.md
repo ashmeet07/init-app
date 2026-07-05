@@ -41,9 +41,58 @@
 
 
 
-**Version:** `1.0.0`
+**Version:** `2.2.0b2`
 
 **Engineer:** `Ashmeet Singh`
+
+## Cross-Platform Setup
+
+Use a virtual environment so editable installs work the same way on macOS, Linux, and Windows.
+Do not run `pip3 install -e .` directly against Apple system Python; older pip versions can fall back to `setup.py develop` and try to write into protected system site-packages.
+
+### One-command dev install
+
+```bash
+python3 scripts/install_dev.py
+```
+
+### macOS / Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+
+### Windows PowerShell
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+```
+
+Offline or DNS-restricted environment:
+
+```bash
+python -m pip install -e .
+```
+
+If runtime dependencies are already installed or supplied by your own wheelhouse, install only the source package without network access:
+
+```bash
+python scripts/install_dev.py --offline-source
+```
+
+The dev installer also builds the native compiler. Use `--skip-compiler` only when a C compiler is not available on that machine.
+
+Build the optional native C engine with:
+
+```bash
+python scripts/build_compiler.py
+```
+
+The compiler output is written to `bin/init-app-compiler` on macOS/Linux and `bin/init-app-compiler.exe` on Windows.
 
 This document outlines the full capabilities of the Project Engine. The engine supports two primary flows: **Interactive UI** (Menu-driven) and **Headless CLI** (Flag-driven).
 
@@ -72,6 +121,13 @@ Use these flags to bypass menus and automate your workflow.
 * `-f, --framework`: `fastapi`, `flask`, `django`, `others`.
 * `-s, --server`: Specify the runner (e.g., `uvicorn`, `gunicorn`, `hypercorn`).
 * `-t, --type`: The build strategy (`auto_config`, `standard`, `production`, `custom`).
+* `--output-dir`: Directory where the project folder is created. Defaults to `~/Documents`.
+* `--here`: Create the project in the current working directory.
+* `--path-behavior`: One-off path behavior for this project: `documents`, `current`, or `custom`.
+* `--set-default-path-behavior`: Save the default path behavior for future runs.
+* `--set-default-output-dir`: Save a custom default output directory for future runs.
+* `--show-path-config`: Show saved path behavior.
+* `--reset-path-config`: Reset saved path behavior.
 
 ### Architecture & Packages (Custom Mode)
 
@@ -83,12 +139,16 @@ Use these flags to bypass menus and automate your workflow.
 * `--db`: Set the database engine (`sqlite`, `postgres`, `mysql`, `mongodb`).
 * `--venv`: Enable virtual environment creation (`y` or `n`).
 
+Database adapters are chosen to work cleanly in local, CI, and container environments. MySQL projects use `PyMySQL` by default, so generated installs do not require native `mysqlclient`, `pkg-config`, or system MySQL headers.
+
 ### Infrastructure Forge
 
 * `--docker`: `dockerfile`, `docker-compose`, `.dockerignore`.
 * `--github`: `main.yml`, `ci.yml`, `cd.yml`.
 * `--k8s`: `deployment.yml`, `service.yml`, `ingress.yml`.
 * `--jenkins`: `Jenkinsfile`.
+* `--community`: `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`.
+* `--package-files`: `setup.cfg`, `setup.py`, `MANIFEST.in`.
 
 ---
 
@@ -101,6 +161,22 @@ Builds a FastAPI project with SQLite and a VENV instantly.
 ```bash
 init-app quick_api -f fastapi -t auto_config --venv y
 
+```
+
+By default, this creates `~/Documents/quick_api` no matter which folder your terminal is currently in. Use `--here` to keep the old current-folder behavior, or `--output-dir /path/to/apps` for CI and DevOps scripts.
+
+Persist your preferred default:
+
+```bash
+init-app --set-default-path-behavior current
+init-app --set-default-output-dir ~/Documents/backend-apps
+init-app --show-path-config
+```
+
+After saving a default, normal commands use it automatically:
+
+```bash
+init-app quick_api -f fastapi
 ```
 
 ### B. The "Full Stack Pro" (Production)

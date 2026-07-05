@@ -6,7 +6,10 @@ echo ""
 
 rm -rf build/ dist/ *.egg-info
 
-python -m build
+PYTHON_BIN="${PYTHON:-python3}"
+
+"$PYTHON_BIN" scripts/build_compiler.py
+"$PYTHON_BIN" -m build
 
 echo ""
 echo "✔ Build complete 😌🔥"

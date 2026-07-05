@@ -5,7 +5,7 @@ Focus: Base, RAG AI, Data Engineering, and Enterprise DevOps.
 Standardization: Atomic Base-IDs for High-Performance Routing.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.2.0b2"
 
 # --- 1. BRANDING & IDENTITY ---
 APP_NAME    = "init-app"
@@ -143,7 +143,7 @@ COMMUNITY_CORE = [
 ]
 
 PACKAGE_FILES = [
-    "MANIFEST.in", "setup.py", "pyproject.toml", "requirements.txt", "package.json"              
+    "MANIFEST.in", "setup.py", "setup.cfg", "requirements.txt", "package.json"              
 ]
 
 UI_MAPPING = {
