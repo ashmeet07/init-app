@@ -27,14 +27,18 @@ def smoke_call(message: str, fn, *args):
 def run_smoke_tests() -> None:
     from tests.test_branding_templates import (
         test_branded_starter_templates_render,
+        test_supported_starter_apps_render_valid_python,
         test_starter_app_uses_project_relative_ui_paths,
     )
     from tests.test_dependency_resolution import (
         test_mysql_uses_portable_driver,
+        test_other_project_types_include_domain_dependencies,
         test_postgres_uses_modern_binary_package,
+        test_supported_web_frameworks_include_runtime_dependency,
         test_sqlite_does_not_pull_native_database_drivers,
     )
     from tests.test_django_generation import (
+        test_django_generated_app_accepts_localhost_requests,
         test_django_drf_generation_adds_rest_framework_settings,
         test_django_generation_creates_working_project_surface,
     )
@@ -47,11 +51,19 @@ def run_smoke_tests() -> None:
         test_output_dir_manifest_controls_project_root,
         test_project_metadata_tracks_paths,
     )
+    from tests.test_packaging_metadata import (
+        test_init_app_installs_django_for_generation_commands,
+        test_package_version_is_stable_major_release,
+    )
 
     smoke_call("default output path", test_default_output_base_prefers_documents)
     smoke_call("portable mysql dependency", test_mysql_uses_portable_driver)
     smoke_call("sqlite dependency set", test_sqlite_does_not_pull_native_database_drivers)
     smoke_call("postgres dependency set", test_postgres_uses_modern_binary_package)
+    smoke_call("web framework dependencies", test_supported_web_frameworks_include_runtime_dependency)
+    smoke_call("other project dependencies", test_other_project_types_include_domain_dependencies)
+    smoke_call("packaging includes django", test_init_app_installs_django_for_generation_commands)
+    smoke_call("package version", test_package_version_is_stable_major_release)
     smoke_call("support file path mapping", test_generated_paths_preserve_supported_file_locations)
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -60,6 +72,7 @@ def run_smoke_tests() -> None:
         smoke_call("project metadata", test_project_metadata_tracks_paths, tmp_path)
         smoke_call("branding templates", test_branded_starter_templates_render, tmp_path)
         smoke_call("project-relative starter paths", test_starter_app_uses_project_relative_ui_paths, tmp_path)
+        smoke_call("starter app syntax matrix", test_supported_starter_apps_render_valid_python, tmp_path)
         smoke_call("support file fallbacks", test_missing_templates_generate_useful_supported_files, tmp_path)
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -69,6 +82,10 @@ def run_smoke_tests() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         smoke_call("django drf generation", test_django_drf_generation_adds_rest_framework_settings, tmp_path)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        smoke_call("django localhost requests", test_django_generated_app_accepts_localhost_requests, tmp_path)
 
     run_load_tests()
 

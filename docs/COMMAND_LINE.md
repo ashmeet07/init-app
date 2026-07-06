@@ -6,7 +6,7 @@ This is the "Source of Truth" document for your engine. I’ve designed this `CO
 
 # 🌌 Advanced Project Engine - CLI Manual
 
-**Version:** `4.6.0`
+**Version:** `3.0.0`
 
 **Engineer:** `Ashmeet Singh`
 

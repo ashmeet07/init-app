@@ -110,7 +110,7 @@ def about():
 
 {% elif fw_name == 'bottle' %}
 try:
-    from bottle import Bottle, response, run, static_file, template
+    from bottle import Bottle, response, run, static_file
 except ModuleNotFoundError as exc:
     missing_dependency(exc.name)
 
@@ -124,7 +124,7 @@ def serve_static(path):
 
 @app.route("/")
 def home():
-    return template(str(UI_PATH / "index.html"))
+    return index_html()
 
 
 @app.route("/health")

@@ -42,7 +42,7 @@ class AppEngine(InitUI):
         parser.add_argument("--reset-path-config", action="store_true", help="Reset saved path defaults and exit.")
         
         # Core Configuration
-        parser.add_argument("-f", "--framework", choices=["fastapi", "flask", "django", "others"], help="Target framework")
+        parser.add_argument("-f", "--framework", choices=const.FRAMEWORKS + const.OTHERS_PROJECT_TYPES, help="Target framework")
         parser.add_argument("-s", "--server", help="Specific server (e.g., uvicorn, gunicorn, hypercorn)")
         parser.add_argument("-t", "--type", choices=["standard", "production", "custom", "auto_config"], dest="strategy", help="Build strategy")
         parser.add_argument("--drf", action="store_true", help="Enable Django Rest Framework (Django only)")

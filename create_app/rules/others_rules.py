@@ -5,6 +5,20 @@ Pattern: Nested Source (src) and Internal Logic separation.
 """
 
 OTHERS_RULES = {
+    "base": {
+        "packages": [
+            "src",
+            "src/core",
+            "src/services",
+            "src/utils",
+            "tests"
+        ],
+        "folders": [
+            "docs",
+            "logs",
+            "scripts"
+        ]
+    },
     "rag_ai": {
         "packages": [
             "src",
@@ -62,6 +76,23 @@ OTHERS_RULES = {
             "staging",              # Intermediate file storage (Parquet/Avro)
             "sql",                  # Pure SQL scripts
             "assets",               # Meta-definitions
+            "logs"
+        ]
+    },
+    "dbt_analytics": {
+        "packages": [
+            "analytics",
+            "analytics/macros",
+            "tests"
+        ],
+        "folders": [
+            "models",
+            "models/staging",
+            "models/marts",
+            "seeds",
+            "snapshots",
+            "analyses",
+            "docs",
             "logs"
         ]
     },

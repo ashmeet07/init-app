@@ -95,9 +95,17 @@ class Bundler:
             if self.strategy in ["production", "auto_config"]:
                 deps += ["django-redis", "django-health-check", "whitenoise", "gunicorn"]
 
-        elif self.fw_name in ["bottle", "falcon", "pyramid"]:
+        elif self.fw_name == "bottle":
+            deps += ["bottle", "waitress", "marshmallow"]
+        elif self.fw_name == "sanic":
+            deps += ["sanic", "uvicorn", "marshmallow"]
+        elif self.fw_name == "falcon":
+            deps += ["falcon", "gunicorn", "waitress", "marshmallow"]
+        elif self.fw_name == "tornado":
+            deps += ["tornado", "marshmallow"]
+        elif self.fw_name == "pyramid":
             # Basic mapper for micro-frameworks
-            deps += [self.fw_name, "waitress", "marshmallow"]
+            deps += ["pyramid", "waitress", "marshmallow"]
 
         # 3. Database Adapters (Extra resolution)
         if "mysql" in self.db_engine:
@@ -112,6 +120,12 @@ class Bundler:
             deps += ["openai", "langchain", "langchain-community", "chromadb", "qdrant-client", "tiktoken", "pypdf"]
         elif self.fw_name == "mlops_core":
             deps += ["scikit-learn", "mlflow", "joblib", "bentoml", "optuna"]
+        elif self.fw_name == "hp_cli":
+            deps += ["typer", "click", "rich"]
+        elif self.fw_name == "data_pipeline":
+            deps += ["pandas", "pyarrow", "prefect", "great-expectations"]
+        elif self.fw_name == "dbt_analytics":
+            deps += ["dbt-core", "dbt-duckdb"]
 
         # Final Clean up: Deduplicate and sort
         unique_deps = sorted(list(set(deps)))
@@ -143,7 +157,15 @@ class Bundler:
         elif self.fw_name in OTHERS_RULES:
             return OTHERS_RULES.get(self.fw_name)
         else:
-            lookup_map = {"fastapi": "FastAPI", "flask": "Flask", "bottle": "Bottle"}
+            lookup_map = {
+                "fastapi": "FastAPI",
+                "flask": "Flask",
+                "bottle": "Bottle",
+                "sanic": "Sanic",
+                "falcon": "Falcon",
+                "tornado": "Tornado",
+                "pyramid": "Pyramid",
+            }
             lookup = lookup_map.get(self.fw_name, self.fw_name.capitalize())
             source_dict = PROD_WEB_RULES if self.strategy in ["production", "auto_config"] else STANDARD_BLUEPRINT
             return source_dict.get(lookup, source_dict.get("FastAPI"))

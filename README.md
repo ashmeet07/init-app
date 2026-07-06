@@ -41,7 +41,7 @@
 
 
 
-**Version:** `2.2.0b2`
+**Version:** `3.0.0`
 
 **Engineer:** `Ashmeet Singh`
 

@@ -5,7 +5,7 @@ Focus: Base, RAG AI, Data Engineering, and Enterprise DevOps.
 Standardization: Atomic Base-IDs for High-Performance Routing.
 """
 
-__version__ = "2.2.0b2"
+__version__ = "3.0.0"
 
 # --- 1. BRANDING & IDENTITY ---
 APP_NAME    = "init-app"
