@@ -102,6 +102,7 @@ def test_django_generation_creates_working_project_surface(tmp_path):
     settings = (project / "django_demo" / "settings.py").read_text()
     assert "import os" in settings
     assert 'load_dotenv(BASE_DIR / ".env")' in settings
+    assert 'ROOT_URLCONF = "django_demo.urls"' in settings
     assert "'web'," in settings
     assert ",," not in settings
     assert "SECRET_KEY = os.environ.get" in settings

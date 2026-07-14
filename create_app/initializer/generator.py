@@ -6,9 +6,10 @@ from create_app.logger import logger
 
 class Generator:
     """
-    PHYSICAL EXECUTION ENGINE (v3.5.6)
-    FIXED: Explicit HTML template rendering and unified path resolution for common assets.
-    FEATURE: Automatic Django-specific path mapping for Templates and Static files.
+    Filesystem writer for generated projects.
+
+    Generator knows how to create folders, render templates, and place static
+    assets in the framework-specific location expected by the starter app.
     """
     def __init__(self, root: Path, ctx: dict):
         self.root = root
@@ -17,10 +18,10 @@ class Generator:
         self.is_drf = ctx.get("is_drf", False)
         self.app_name = ctx.get("app_name", "core_app")
         
-        # 1. Resolve Base Directory (points to 'create_app' folder)
+        # Base directory points to the installed/source create_app package.
         self.base_dir = Path(__file__).parent.parent.resolve()
         
-        # 2. Setup Jinja Search Paths
+        # Jinja checks package templates first, then shared HTML/static folders.
         search_paths = [
             str(self.base_dir),
             str(self.base_dir / "common" / "template"),
@@ -324,7 +325,7 @@ class Generator:
         self.root.mkdir(parents=True, exist_ok=True)
         logger.info("🛠️ Building project filesystem...")
 
-        # 1. Folder & Package Scaffolding
+        # Create directories first so rendered files always have a parent path.
         folders_to_create = (blueprint.get("folders", []) + blueprint.get("packages", []))
         for folder in folders_to_create:
             if not folder or folder == "none" or (folder.lower() == "ui" and self.fw == "django"):
@@ -336,43 +337,37 @@ class Generator:
             if folder in blueprint.get("packages", []):
                 (target / "__init__.py").touch()
 
-        # 2. File Rendering from Manifest
         if manifest_rules:
             logger.info(f"📄 Rendering {len(manifest_rules)} files from manifest...")
             for rule in manifest_rules:
                 self._render_and_write(rule["source"], rule["target"])
 
-        # 3. HTML and Static Asset Handling (Framework Specific)
         self._handle_static_assets()
         
         logger.info("🏁 Physical generation phase complete.")
         return True
 
     def _handle_static_assets(self):
-        """Handles HTML templates and Static assets (CSS/JS)."""
+        """Place shared HTML/CSS/JS assets in the correct framework folder."""
         
-        # --- PART A: HTML TEMPLATES ---
+        # HTML templates live under app/templates for Django and ui/ otherwise.
         src_tpl_dir = self.base_dir / "common" / "template"
         if src_tpl_dir.exists():
             for tpl_file in src_tpl_dir.glob("*.tpl"):
                 clean_name = tpl_file.name.replace(".tpl", "")
                 
                 if self.fw == "django":
-                    # Django Path: project/app_name/templates/index.html
                     target_path = f"{self.app_name}/templates/{clean_name}"
                 else:
-                    # Generic Path: project/ui/index.html
                     target_path = f"ui/{clean_name}"
                 
                 tpl_lookup = f"common/template/{tpl_file.name}"
                 self._render_and_write(tpl_lookup, target_path)
 
-        # --- PART B: STATIC ASSETS (CSS/JS) ---
         src_static_dir = self.base_dir / "common" / "static"
         if not src_static_dir.exists():
             return
 
-        # Determine target static root
         if self.fw == "django":
             target_static_root = self.root / self.app_name / "static"
         else:
@@ -387,23 +382,16 @@ class Generator:
                 if file.endswith(".tpl"):
                     clean_name = str(rel_path).replace(".tpl", "")
                     
-                    # Fix: Map 'scripts/' folder to 'js/' target folder
                     if clean_name.startswith("scripts"):
                         clean_name = clean_name.replace("scripts", "js", 1)
                     
                     tpl_lookup = f"common/static/{rel_path}".replace("\\", "/")
                     
-                    # Calculate target path relative to project root
                     final_abs_path = target_static_root / clean_name
                     rel_to_root = str(final_abs_path.relative_to(self.root))
                     
                     self._render_and_write(tpl_lookup, rel_to_root)
                 else:
-                    # Copy non-template assets (images, etc)
                     dest_file = target_static_root / rel_path
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source_file, dest_file)
-
-    def _sync_files(self, src: Path, dest: Path, tpl_lookup_prefix: str):
-        """Deprecated in favor of explicit manifest and static asset handling."""
-        pass

@@ -24,22 +24,23 @@ from create_app.logger import logger
 
 class Controller:
     """
-    MISSION CONTROL (v5.2.1)
-    Orchestrator for System Checks, Django Injection, and Architecture Generation.
-    FEATURE: Renders and displays work.txt.tpl and venv.txt.tpl directly to terminal.
-    FIXED: Conditional DRF injection and clean app_name appending for normal Django.
+    Build orchestrator.
+
+    The controller receives a normalized manifest from either CLI or interactive
+    mode, resolves the output path, asks Bundler for the logical blueprint, and
+    asks Generator to write the project files.
     """
     def __init__(self, manifest: dict, folders: list): 
         self.manifest = manifest
         self.p_name = manifest.get("project name", "new_project")
         
-        # Resolve Framework and Strategy
+        # Normalize user-facing labels into stable slugs used by rules/templates.
         bp_raw = str(manifest.get("core blueprint", "fastapi")).lower()
         self.fw = bp_raw.split(" (")[0].strip().split(" +")[0]
         self.is_drf = "rest framework" in bp_raw or manifest.get("is_drf", False)
         self.strategy = str(manifest.get("build strategy", "standard")).lower()
         
-        # ⚡ AUTO-CONFIG OVERRIDE
+        # Auto-config is intentionally opinionated: it enables the full suite.
         if self.strategy == "auto_config":
             logger.info("⚡ Auto-Config: Forcing Every Production Suite & Folder.")
             folders = list(const.ALL_CUSTOM_FOLDERS)
@@ -56,7 +57,7 @@ class Controller:
         self.root = self.output_base / self.p_name
         self.colors = UIConfig.C
         
-        # DNA of the build
+        # Context shared with templates and build helpers.
         self.ctx = {
             **self.manifest,
             "project_name": self.p_name,
@@ -75,7 +76,7 @@ class Controller:
         self.executor = Bundler(self.root, self.ctx)
         self.worker = Generator(self.root, self.executor.ctx)
         
-        # ⚡ Template Engine for Terminal Output
+        # Terminal instructions are normal templates rendered after generation.
         self.tpl_path = Path(ROOT_DIR) / "create_app" / "common"
         self.jinja_env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(self.tpl_path)))
 
@@ -86,6 +87,7 @@ class Controller:
 
     @classmethod
     def _resolve_output_base(cls, manifest: dict) -> Path:
+        """Choose where a generated project folder will be created."""
         raw_output = manifest.get("output_dir") or manifest.get("output path")
         if raw_output:
             return Path(str(raw_output)).expanduser().resolve()
@@ -230,6 +232,7 @@ class Controller:
 
                 content = self._patch_django_env_loader(content)
                 content = self._patch_django_database_settings(content)
+                content = self._ensure_django_runtime_settings(content)
                 
                 settings_path.write_text(content, encoding="utf-8")
                 logger.info(f"✅ Django settings.py patched. Mode: {'DRF' if self.is_drf else 'Standard'}")
@@ -336,14 +339,65 @@ urlpatterns = [
         )
 
     def _patch_django_database_settings(self, settings_content: str) -> str:
+        """Replace Django's default database block with the selected database."""
         block = self._django_database_settings_block()
         pattern = r"DATABASES\s*=\s*\{\s*['\"]default['\"]\s*:\s*\{.*?\n\s*\}\s*\n\}"
         if re.search(pattern, settings_content, flags=re.DOTALL):
             return re.sub(pattern, block, settings_content, flags=re.DOTALL, count=1)
         return f"{settings_content.rstrip()}\n\n{block}\n"
 
+    def _ensure_django_runtime_settings(self, settings_content: str) -> str:
+        """Fill settings that a minimal/fallback Django project needs to boot."""
+        additions = []
+
+        if "ROOT_URLCONF" not in settings_content:
+            additions.append(f'ROOT_URLCONF = "{self.p_name}.urls"')
+
+        if "WSGI_APPLICATION" not in settings_content:
+            additions.append(f'WSGI_APPLICATION = "{self.p_name}.wsgi.application"')
+
+        if "MIDDLEWARE" not in settings_content:
+            additions.append('''MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]''')
+
+        if "TEMPLATES" not in settings_content:
+            additions.append('''TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]''')
+
+        if "STATIC_URL" not in settings_content:
+            additions.append('STATIC_URL = "static/"')
+
+        if "DEFAULT_AUTO_FIELD" not in settings_content:
+            additions.append('DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"')
+
+        if not additions:
+            return settings_content
+
+        return f"{settings_content.rstrip()}\n\n" + "\n\n".join(additions) + "\n"
+
     @staticmethod
     def _patch_django_env_loader(settings_content: str) -> str:
+        """Add optional python-dotenv loading to generated Django settings."""
         if "load_dotenv(BASE_DIR / \".env\")" in settings_content:
             return settings_content
 
@@ -360,6 +414,7 @@ except ImportError:
         return settings_content
 
     def _django_database_settings_block(self) -> str:
+        """Return a Django DATABASES block for sqlite, MySQL, or PostgreSQL."""
         db = str(self.ctx.get("database", self.manifest.get("database", "sqlite"))).lower()
 
         if "mysql" in db:
@@ -516,11 +571,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
         self._scaffold_django_app(app_name)
 
     def _patch_django_manage_py(self):
+        """Ensure manage.py can re-exec through the generated local venv."""
         manage_path = self.root / "manage.py"
         if manage_path.exists():
             manage_path.write_text(self._django_manage_py_content(), encoding="utf-8")
 
     def _django_manage_py_content(self) -> str:
+        """Return the managed Django entry script used in generated projects."""
         return f'''#!/usr/bin/env python
 import os
 import sys
@@ -572,6 +629,7 @@ if __name__ == "__main__":
 '''
 
     def _scaffold_django_app(self, app_name: str):
+        """Create a minimal Django app when startapp cannot run locally."""
         app_dir = self.root / app_name
         app_dir.mkdir(parents=True, exist_ok=True)
         (app_dir / "__init__.py").write_text("", encoding="utf-8")
@@ -610,6 +668,7 @@ class {self._django_config_class_name(app_name)}Config(AppConfig):
         print("—"*50 + "\n")
 
     def _write_project_metadata(self):
+        """Persist traceability data for generated projects."""
         metadata = {
             "project_name": self.p_name,
             "framework": self.fw,
@@ -635,7 +694,7 @@ class {self._django_config_class_name(app_name)}Config(AppConfig):
             if self.fw == "django": 
                 self._handle_django_logic()
             
-            # 3. Execution & Generation
+            # Resolve rules, render files, then create any requested support files.
             build_data = self.executor.execute()
             self.worker.ctx = build_data.get('ctx', self.ctx) 
             
@@ -653,7 +712,6 @@ class {self._django_config_class_name(app_name)}Config(AppConfig):
                         
                     final_manifest.append(rule)
 
-                # --- INFRASTRUCTURE & UI INJECTION ---
                 infra_map = self.manifest.get("infra_files", {})
                 for suite, files in infra_map.items():
                     if not files: continue
@@ -666,7 +724,6 @@ class {self._django_config_class_name(app_name)}Config(AppConfig):
                 
                 self.worker.run(blueprint=build_data.get('blueprint'), manifest_rules=final_manifest)
             
-            # 4. Environment Setup
             self._setup_virtual_env()
             
             if self.fw == "django":
@@ -676,12 +733,8 @@ class {self._django_config_class_name(app_name)}Config(AppConfig):
 
             self._write_project_metadata()
             
-            # ⚡ 6. FINAL TERMINAL OUTPUT
             self._render_instructions()
 
         except Exception as e:
             logger.error(f"🔥 Controller Failure: {str(e)}", exc_info=True)
             print(f"\n  {self.colors['accent']}✖ {self.colors['white']}failure: {str(e).lower()}")
-
-if __name__ == "__main__":
-    pass

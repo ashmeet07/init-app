@@ -1,7 +1,11 @@
-import readchar, time, sys, os, argparse
+import argparse
+import os
+import sys
 from pathlib import Path
 
-# --- AGGRESSIVE PATH RESOLUTION ---
+import readchar
+
+# Allow direct execution from a source checkout as well as installed console use.
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
@@ -13,12 +17,14 @@ from create_app.initializer.controller import Controller
 from create_app.path_config import PathConfig
 
 class AppEngine(InitUI):
+    """Coordinates the two public channels: flag-driven CLI and interactive UI."""
+
     def __init__(self):
         super().__init__(const.APP_NAME, const.__version__)
         self.prompter = BuildPrompts(self, const)
         self.infra_keys = ["docker", "jenkins", "k8s", ".github", "db"]
         self.domain_folders = [f.lower() for f in const.ALL_CUSTOM_FOLDERS if f.lower() not in self.infra_keys]
-        # DNA of the project creation
+        # The manifest is the hand-off contract between the UI/CLI and Controller.
         self.manifest = { 
             "infra_suites": [], 
             "infra_files": {}, 
@@ -66,6 +72,7 @@ class AppEngine(InitUI):
         return parser
 
     def start(self):
+        """Route the request to the CLI channel or the interactive channel."""
         parser = self._setup_parser()
         args = parser.parse_args()
 
@@ -111,7 +118,7 @@ class AppEngine(InitUI):
         strategy = args.strategy or "standard"
         p_name = args.name
         
-        # Resolve Infrastructure
+        # Convert optional flag groups into a single infrastructure manifest.
         infra_map = {
             "docker": args.docker,
             "github": args.github,
@@ -125,13 +132,13 @@ class AppEngine(InitUI):
                 self.manifest["infra_suites"].append(key)
                 self.manifest["infra_files"][key] = files
 
-        # FOLDER RESOLUTION: Handle custom vs default
+        # Custom mode respects explicit folder lists; other modes use defaults.
         if strategy == "custom" and args.folders:
             selected_folders = args.folders
         else:
             selected_folders = self.prompter.get_smart_folders(fw_slug, strategy, self.domain_folders)
 
-        # PACKAGE RESOLUTION: Precise __init__.py logic
+        # The init strategy decides which generated folders become Python packages.
         if strategy == "custom" and args.packages is not None:
             init_map = {folder: (folder in args.packages) for folder in selected_folders}
         else:
@@ -147,6 +154,7 @@ class AppEngine(InitUI):
             "apps": "none", 
             "database": args.db or "sqlite",
             "venv_enabled": args.venv == "y",
+            "app_name": "core_app",
             "init_strategy": init_map,
             "output_dir": args.output_dir,
             "create_in_current_dir": args.here,
@@ -163,7 +171,7 @@ class AppEngine(InitUI):
             fw_display, _ = self.menu("core blueprint", const.FRAMEWORKS, sub_mapping=const.FRAMEWORK_SERVER_MAPPING, flow=["blueprint"])
             fw_slug = fw_display.split(" (")[0].lower()
             
-            # Sync DRF logic from UI string
+            # The menu label carries the DRF choice, so normalize it into the manifest.
             self.manifest["is_drf"] = "rest framework" in fw_display.lower()
 
             if fw_slug == "others":
@@ -173,7 +181,7 @@ class AppEngine(InitUI):
             mode_raw, _ = self.menu("build strategy", const.PROJECT_MODES, flow=[fw_slug, "mode"])
             mode = mode_raw.lower()
             
-            # Dynamic Workflow
+            # The following choices become the generation context passed to Controller.
             db_raw, _ = self.menu("data nexus", const.DB_ENGINES, flow=[fw_slug, mode, "database"])
             db = db_raw.lower()
             
@@ -195,8 +203,9 @@ class AppEngine(InitUI):
                     "build strategy": mode,
                     "environment": env_display,
                     "apps": ", ".join(apps_list) if apps_list else "none", 
+                    "app_name": apps_list[0] if apps_list else "core_app",
                     "database": db,
-                    "venv_enabled": "no" if "no venv" in env_display.lower() else "yes"
+                    "venv_enabled": "no venv" not in env_display.lower(),
                 })
 
             self._run_mission_control(fw_slug, p_name, mode, selected_folders)

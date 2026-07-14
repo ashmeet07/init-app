@@ -18,3 +18,5 @@ def test_package_version_is_stable_major_release():
     config.read(Path(__file__).resolve().parents[1] / "setup.cfg")
 
     assert config["metadata"]["version"] == "3.0.0"
+    classifiers = "\n".join(config["metadata"]["classifiers"].splitlines())
+    assert "Development Status :: 5 - Production/Stable" in classifiers

@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 import create_app.constants as const 
 
-# 🟢 Centralized Logger Import
 from create_app.logger import logger
 
 from create_app.rules.global_rules import get_global_manifest
@@ -13,16 +12,16 @@ from create_app.rules.others_rules import OTHERS_RULES
 
 class Bundler:
     """
-    SILENT LOGIC BUNDLER (v3.5.3)
-    Resolves architecture, INJECTS constants, and POPULATES dependencies.
-    FEATURE: Precise Django requirement resolution.
-    FEATURE: Added Rich Libraries (WTForms, Flask-Mail, Mappers, and Schema tools).
+    Converts a build context into folders, files, and dependencies.
+
+    Bundler is intentionally side-effect light: it prepares data for Generator
+    but does not write the project filesystem itself.
     """
     def __init__(self, root: Path, ctx: dict):
         self.root = root  
         self.ctx = ctx
         
-        # 1. Normalize Context keys
+        # Normalize context keys so templates and rules share the same names.
         self.fw_name = ctx.get('fw_name', ctx.get('framework', 'fastapi')).lower()
         self.strategy = ctx.get('build_strategy', 'standard').lower()
         self.is_drf = ctx.get('is_drf', False)
@@ -30,11 +29,10 @@ class Bundler:
         
         logger.info(f"🏗️ Bundler Init: FW={self.fw_name}, Strategy={self.strategy}, DRF={self.is_drf}")
         
-        # ⚡ 2. Inject Raw Constants
+        # Constants become template variables such as APP_NAME and GITHUB_SUITE.
         constants_dict = {k: v for k, v in const.__dict__.items() if not k.startswith("__")}
         self.ctx.update(constants_dict)
         
-        # ⚡ 3. Intelligent Context & Dependencies
         self._inject_dynamic_defaults()
         self._resolve_dependencies()
 
@@ -42,7 +40,7 @@ class Bundler:
         """Comprehensive Dependency Resolver - Injects Rich Professional Libraries."""
         logger.debug(f"🔍 Deep Scanning dependencies for {self.fw_name}...")
         
-        # 1. Global Core Requirements: pure-Python/portable by default for CI and dev containers.
+        # Global requirements stay portable so generated projects work in CI.
         deps = [
             "python-dotenv", 
             "jinja2", 
@@ -51,38 +49,35 @@ class Bundler:
             "alembic",     
             "sqlalchemy",  
             "cryptography",
-            "pydantic"      # Added as global for Mappers/Schemas across all frameworks
+            "pydantic"
         ]
 
-        # 2. Framework-Specific Logic with Rich Add-ons
+        # Add the framework runtime and common production helpers.
         if self.fw_name == "fastapi":
             deps += [
-                "fastapi", "uvicorn[standard]", "pydantic[email]", 
-                "pydantic-settings", "httpx", "python-multipart" # Multipart for file handling
+                "fastapi", "uvicorn[standard]", "pydantic[email]",
+                "pydantic-settings", "httpx", "python-multipart",
             ]
             if self.strategy in ["production", "auto_config"]:
                 deps += ["slowapi", "fastapi-pagination", "python-jose[cryptography]", "passlib[bcrypt]", "gunicorn"]
         
         elif self.fw_name == "flask":
-            # RICH FLASK STACK: Forms, Mail, Mappers, and Auth
             deps += [
                 "flask", "flask-cors", "flask-sqlalchemy", "gunicorn",
-                "flask-wtf", "wtforms",          # Form Handling
-                "flask-mail",                    # Email Integration
-                "flask-marshmallow",             # Object Serialization/Mappers
-                "marshmallow-sqlalchemy"         # DB to Schema Mapping
+                "flask-wtf", "wtforms",
+                "flask-mail",
+                "flask-marshmallow",
+                "marshmallow-sqlalchemy",
             ]
             if self.strategy in ["production", "auto_config"]:
                 deps += ["flask-jwt-extended", "flask-migrate", "flask-smorest"]
         
         elif self.fw_name == "django":
-            # RICH DJANGO STACK
             deps += [
                 "django", "django-environ", "django-cors-headers", 
-                "django-extensions", "django-crispy-forms" # Beautiful forms
+                "django-extensions", "django-crispy-forms",
             ]
             
-            # DRF + JSON API Requirements
             if self.is_drf:
                 deps += [
                     "djangorestframework", 
@@ -104,10 +99,9 @@ class Bundler:
         elif self.fw_name == "tornado":
             deps += ["tornado", "marshmallow"]
         elif self.fw_name == "pyramid":
-            # Basic mapper for micro-frameworks
             deps += ["pyramid", "waitress", "marshmallow"]
 
-        # 3. Database Adapters (Extra resolution)
+        # Add database adapters only for the selected database engine.
         if "mysql" in self.db_engine:
             deps += ["PyMySQL"]
         elif "postgres" in self.db_engine:
@@ -115,7 +109,7 @@ class Bundler:
         elif "mongodb" in self.db_engine:
             deps += ["pymongo", "motor", "beanie" if self.fw_name == "fastapi" else "mongoengine"]
 
-        # 4. Domain Specific (AI & Data Science)
+        # Specialized project types add their domain libraries.
         if self.fw_name == "rag_ai":
             deps += ["openai", "langchain", "langchain-community", "chromadb", "qdrant-client", "tiktoken", "pypdf"]
         elif self.fw_name == "mlops_core":
@@ -127,7 +121,6 @@ class Bundler:
         elif self.fw_name == "dbt_analytics":
             deps += ["dbt-core", "dbt-duckdb"]
 
-        # Final Clean up: Deduplicate and sort
         unique_deps = sorted(list(set(deps)))
         self.ctx["dependencies"] = "\n".join(unique_deps)
         logger.info(f"📦 Successfully resolved {len(unique_deps)} libraries for {self.fw_name}.")
@@ -150,7 +143,7 @@ class Bundler:
         })
 
     def _get_architectural_blueprint(self):
-        """Resolves folder structure."""
+        """Choose the folder/package rule set for the selected framework."""
         if "django" in self.fw_name:
             mode = "drf" if self.is_drf else "standard"
             return DJANGO_PATCH_RULES.get(mode, DJANGO_PATCH_RULES["standard"])
@@ -176,7 +169,7 @@ class Bundler:
         blueprint = self._get_architectural_blueprint()
         manifest = get_global_manifest(self.ctx)
         
-        # UI Folder Setup
+        # UI folder names differ between frameworks but templates are shared.
         ui_map = {"fastapi": "ui", "flask": "templates", "bottle": "templates"}
         ui_folder = ui_map.get(self.fw_name, "ui")
         self.ctx["ui_folder"] = ui_folder
@@ -186,7 +179,7 @@ class Bundler:
             if ui_folder not in blueprint["folders"]:
                 blueprint["folders"].append(ui_folder)
 
-        # Entry point normalization
+        # Generated web starters use a single app.py entry for predictability.
         entry_found = False
         for rule in manifest:
             if any(x in rule["target"] for x in ["app.py", "main.py", "entry.py"]):
@@ -201,7 +194,7 @@ class Bundler:
         if not entry_found and "django" not in self.fw_name:
             manifest.append({"source": "common/entry.py.tpl", "target": "app.py"})
 
-        # UI Inject
+        # Shared UI templates are always included for web starters.
         if self.fw_name in ["fastapi", "flask", "bottle"]:
             ui_rules = [
                 {"source": "common/template/index.html.tpl", "target": f"{ui_folder}/index.html"},
@@ -212,7 +205,6 @@ class Bundler:
             for rule in ui_rules:
                 if rule["target"] not in existing: manifest.append(rule)
 
-        # Requirements
         manifest.append({"source": "common/requirements.txt.tpl", "target": "requirements.txt"})
 
         return {"blueprint": blueprint, "manifest": manifest, "ctx": self.ctx}
