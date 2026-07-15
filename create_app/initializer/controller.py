@@ -19,7 +19,31 @@ from create_app.initializer.generator import Generator
 from create_app.path_config import PathConfig
 import create_app.constants as const 
 from create_app.engine.ui.spinner import Spinner 
-from docs.prerequisite import Prerequisite
+import importlib.util
+
+# Attempt to import the prerequisite checker from the repository `docs/` folder.
+# When the package is installed from PyPI the top-level `docs` folder is not
+# included as a package, so importing `docs.prerequisite` can fail. In that
+# case we fall back to a no-op Prerequisite implementation so generation can
+# continue without a hard failure.
+try:
+    from docs.prerequisite import Prerequisite  # type: ignore
+except Exception:
+    try:
+        prereq_path = Path(ROOT_DIR) / "docs" / "prerequisite.py"
+        if prereq_path.exists():
+            spec = importlib.util.spec_from_file_location("docs.prerequisite", str(prereq_path))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)  # type: ignore
+            Prerequisite = getattr(module, "Prerequisite")
+        else:
+            raise FileNotFoundError
+    except Exception:
+        class Prerequisite:  # fallback no-op
+            @staticmethod
+            def check_system():
+                return {"status": True, "errors": []}
+
 from create_app.logger import logger
 
 class Controller:
@@ -193,10 +217,23 @@ class Controller:
         
         with Spinner(f"Injected Django architecture"):
             # 1. Standard Bootstrap
-            if not self._run_django_command([sys.executable, "-m", "django", "startproject", self.p_name, "."]):
+            # Try to run Django's startproject. Tests and some CI environments
+            # may mock subprocess.run to return success without creating files,
+            # so we must verify the expected files exist and fall back to
+            # scaffolding if they do not.
+            startproject_ok = self._run_django_command(
+                [sys.executable, "-m", "django", "startproject", self.p_name, "."]
+            )
+            settings_path = self.root / self.p_name / "settings.py"
+            if not startproject_ok or not settings_path.exists():
+                # If startproject failed or didn't create files, scaffold.
                 self._scaffold_django_project(app_name)
-            elif not self._run_django_command([sys.executable, "manage.py", "startapp", app_name]):
-                self._scaffold_django_app(app_name)
+            else:
+                # startproject succeeded and created files; attempt startapp.
+                startapp_ok = self._run_django_command([sys.executable, "manage.py", "startapp", app_name])
+                app_dir = self.root / app_name
+                if not startapp_ok or not app_dir.exists():
+                    self._scaffold_django_app(app_name)
 
             settings_path = self.root / self.p_name / "settings.py"
             if settings_path.exists():

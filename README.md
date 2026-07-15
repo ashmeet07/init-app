@@ -41,7 +41,7 @@
 
 
 
-**Version:** `3.0.0`
+**Version:** `3.1.0`
 
 **Engineer:** `Ashmeet Singh`
 
@@ -62,6 +62,30 @@ python3 scripts/install_dev.py
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
+
+### Troubleshooting: missing `.venv` or activation errors
+
+If you see errors like `source: no such file or directory: .venv` or activation fails, the project virtual environment hasn't been created yet. Create and activate it with:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+
+If you prefer using the packaged CLI directly (without activating the venv), run the bundled script under the virtualenv python after creating it:
+
+```bash
+.venv/bin/init-app --help
+```
+
+If a dependency like `jinja2` or `django` is reported missing when importing modules, activate the virtualenv and install dev requirements:
+
+```bash
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+```
+
 ```
 
 ### Windows PowerShell
