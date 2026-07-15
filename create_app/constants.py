@@ -1,11 +1,11 @@
 """
-UNIFIED ARCHITECTURAL CONSTANTS (v0.6.1)
+UNIFIED ARCHITECTURAL CONSTANTS (v3.0.0)
 Project: init-app Engine
 Focus: Base, RAG AI, Data Engineering, and Enterprise DevOps.
 Standardization: Atomic Base-IDs for High-Performance Routing.
 """
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 
 # --- 1. BRANDING & IDENTITY ---
 APP_NAME    = "init-app"

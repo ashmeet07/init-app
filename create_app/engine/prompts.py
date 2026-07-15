@@ -1,4 +1,3 @@
-import time
 import sys
 from create_app.engine.ui.ui_config import UIConfig
 
@@ -14,7 +13,7 @@ class BuildPrompts:
     def get_project_name(self):
         """
         Standalone Project Name prompt for Auto-Config or Quick Starts.
-        Prevents 'AttributeError' in AppEngine.
+        The returned slug is safe to use as a folder or package-ish name.
         """
         p_name = ""
         while not p_name:
@@ -36,16 +35,15 @@ class BuildPrompts:
         fw_clean, mode_clean = fw.lower(), mode.lower()
         self.ui.header("finalizing identity", "accent")
         
-        # 1. Get Project Name using the internal method
+        # Project name is always collected first because it drives output paths.
         p_name = self.get_project_name()
 
-        # 2. Django App Sequence (Only triggered for Django builds)
+        # Django builds may contain multiple apps; the first app is the route target.
         apps = []
         if "django" in fw_clean:
             counts = [str(i).zfill(2) for i in range(1, 11)]
             sub_map = {"initialize apps": counts}
             
-            # Using the UI menu to pick number of apps
             _, count_val = self.ui.menu(
                 "app configuration", 
                 ["Initialize Apps"], 
@@ -81,7 +79,7 @@ class BuildPrompts:
         fw, mode = fw.lower(), mode.lower()
         folders = set()
         
-        # 1. Framework-Specific Structural Cores
+        # Framework-specific cores are the minimum useful directories.
         if "django" in fw:
             folders.update(["apps", "core", "static", "templates", "middleware"])
         elif "rag_ai" in fw:
@@ -99,15 +97,11 @@ class BuildPrompts:
             # Generic High-Performance Baseline
             folders.update(["src", "tests", "config", "utils"])
 
-        # 2. Strategy Injections
-        # Production/Custom builds get the full Enterprise suite
+        # Production/custom/auto_config builds get broader operational layers.
         if mode in ["production", "custom", "auto_config"]:
-            # Inject domain folders (Standard generic list)
             if domain_folders:
                 folders.update(domain_folders)
             
-            # Maintenance & Ops Layers
             folders.update(["docs", "scripts", "logs"])
             
-        # Clean out any empty strings or 'none' tags
         return sorted([f for f in folders if f and f.lower() != "none"])
